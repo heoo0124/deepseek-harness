@@ -59,7 +59,13 @@ The page never holds a full settings section: it holds only the REDACTED descrip
 
 ### Validation
 
-A typed API key is judged on its own field: after trimming, it must be non-empty and every character must be printable ASCII (`[\x21-\x7E]`), which is exactly what an HTTP header value can carry — the twin of `normalizeApiKey` in `@deepseek-ai/dsh-llm`, mirrored here because the source-plane split forbids importing it. A value matching a pasted `NAME=value` environment line or wrapped in matching quotes is refused as the same format failure. Empty ids, duplicate ids, empty explicit names, and unreadable, non-positive, or fractional capacities fail before any write. DeepSeek's `models` is one replace-by-value array: the editor shows inherited effective rows until the first model edit materializes the complete array in the user layer, while reset unsets that override.
+A typed API key is judged on its own field: after trimming, it must be non-empty and every character must be printable ASCII (`[\x21-\x7E]`), which is exactly what an HTTP header value can carry — the twin of `normalizeApiKey` in `@deepseek-ai/dsh-llm`, mirrored here because the source-plane split forbids importing it. A value matching a pasted `NAME=value` environment line or wrapped in matching quotes is refused as the same format failure. Empty ids, duplicate ids, empty explicit names, and unreadable, non-positive, or fractional capacities fail before any write. A row's input modalities fail when the list names a modality outside `text` and `image`, repeats one, or is empty — values only a hand-edited `settings.yaml` reaches, since the checkbox group cannot write them. DeepSeek's `models` is one replace-by-value array: the editor shows inherited effective rows until the first model edit materializes the complete array in the user layer, while reset unsets that override.
+
+### Input modalities
+
+Both families' rows carry the same checkbox group behind a row's disclosure, but not the same field: `llm-deepseek` reads `inputModalities` and `llm-pi-ai` reads `input`. The names differ because the empty states do — deepseek's schema defaults the field to `['text']`, while pi-ai reads an absent `input` as "no answer here" and resolves it through the installed catalog entry, then the route's `defaultInput`. A shared name would need a mapping at every read, and the pi-ai half would lose the difference between "declared text-only" and "inherited".
+
+So `src/client/modality.ts` writes each family its own field. Text is the floor and cannot be cleared: clearing the last modality restores it rather than writing an empty list, which pi-ai would read as a model accepting nothing and deepseek's schema would refuse. An explicit declaration is never dropped for looking like the default — on the pi-ai side that would widen a row the user just narrowed back to whatever its catalog entry says.
 
 ### Concurrency and credentials
 

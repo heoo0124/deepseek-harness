@@ -12,6 +12,8 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
+import { effectiveModalities, invalidModality, MODALITY_CHOICES, withModality } from './modality.ts'
+import type { ModalityChoice, ModalityFamily } from './modality.ts'
 
 /** One catalog entry kept structurally open so hidden or future fields survive an edit. */
 export type DeepSeekModelDraft = Record<string, unknown>
@@ -74,7 +76,7 @@ export interface DeepSeekModelsValidationFailure {
   index: number
   /** Message key owned by the Models settings section. */
   key: 'modelIdRequired' | 'modelIdDuplicate' | 'modelNameInvalid' | 'modelContextInvalid'
-  | 'modelMaxTokensInvalid'
+  | 'modelMaxTokensInvalid' | 'modalityInvalid'
 }
 
 /** Convert a schema-validated catalog value into records without dropping hidden fields. */
@@ -88,10 +90,20 @@ export function modelDrafts(value: unknown): DeepSeekModelDraft[] {
 
 /**
  * Validate adapter constraints that the serialized schema cannot express.
+ *
+ * Both families' rows go through this one checker, so the modality field it
+ * reads is the caller's: `inputModalities` for deepseek, `input` for pi-ai.
+ * A row the page did not write can still fail here — one edited directly in
+ * `settings.yaml` — which is the only case the modality rule catches.
+ *
  * @param value - user-owned `models` value, or undefined while inherited.
+ * @param family - the adapter family whose modality field these rows carry.
  * @returns the first invalid row, or undefined when the adapter will accept it.
  */
-export function validateDeepSeekModels(value: unknown): DeepSeekModelsValidationFailure | undefined {
+export function validateDeepSeekModels(
+  value: unknown,
+  family: ModalityFamily = 'deepseek',
+): DeepSeekModelsValidationFailure | undefined {
   if (value === undefined) return undefined
   const models = modelDrafts(value)
   const seen = new Set<string>()
@@ -118,6 +130,7 @@ export function validateDeepSeekModels(value: unknown): DeepSeekModelsValidation
       && (typeof maxTokens !== 'number' || !Number.isInteger(maxTokens) || maxTokens <= 0)) {
       return { index, key: 'modelMaxTokensInvalid' }
     }
+    if (invalidModality(model, family) !== undefined) return { index, key: 'modalityInvalid' }
   }
   return undefined
 }
@@ -132,6 +145,12 @@ export interface DeepSeekModelsEditorProps {
   defaultContextWindow: number | undefined
   /** Fallback output cap used when a row omits its exact value. */
   defaultMaxTokens: number | undefined
+  /**
+   * The adapter family whose modality field a row carries. Both families render
+   * through this editor's rows, and the field differs: `inputModalities` for
+   * deepseek, `input` for pi-ai.
+   */
+  family: ModalityFamily
   /** Section copy. */
   t: (key: keyof typeof en) => string
   /** Disable every mutation. */
@@ -262,6 +281,26 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
     </label>
   )
 
+  /** One modality's checkbox within a row's group. */
+  const modalityBox = (model: DeepSeekModelDraft, index: number, choice: ModalityChoice): ReactNode => {
+    const label = props.t(choice === 'text' ? 'modalityText' : 'modalityImage')
+    return (
+      <label className={styles['modelModality']}>
+        <input
+          type="checkbox"
+          checked={effectiveModalities(model, props.family).includes(choice)}
+          disabled={props.disabled}
+          aria-label={`${props.t('modality')} ${label} ${String(index + 1)}`}
+          onChange={(event) => {
+            props.onChange(props.models.map((row, at) =>
+              at === index ? withModality(row, props.family, choice, event.target.checked) : row))
+          }}
+        />
+        <span>{label}</span>
+      </label>
+    )
+  }
+
   return (
     <section className={styles['modelCatalog']} aria-label={props.t('models')}>
       <div className={styles['modelListHead']}>
@@ -343,6 +382,13 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
                     <div className={styles['modelAdvanced']}>
                       {capacityField(model, index, 'contextWindow', props.defaultContextWindow)}
                       {capacityField(model, index, 'maxTokens', props.defaultMaxTokens)}
+                      <div className={styles['modelModalityGroup']} role="group" aria-label={`${props.t('modality')} ${String(index + 1)}`}>
+                        <span className={styles['modelFieldLabel']}>{props.t('modality')}</span>
+                        {MODALITY_CHOICES.map(choice => (
+                          <span key={choice}>{modalityBox(model, index, choice)}</span>
+                        ))}
+                        <span className={styles['modelModalityHint']}>{props.t('modalityHint')}</span>
+                      </div>
                     </div>
                   )
                   : null}

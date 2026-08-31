@@ -513,6 +513,37 @@
   line-height: 18px;
 }
 
+/* Spans the grid: the group holds several boxes, so it takes a full track
+   rather than competing with the two capacity fields for one. */
+.modelModalityGroup {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0 0;
+}
+
+.modelModality {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.modelModality input[type='checkbox']:disabled {
+  cursor: not-allowed;
+}
+
+.modelModalityHint {
+  flex: 1 1 auto;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .modelEmpty {
   padding: 12px;
   border: 1px dashed var(--dsw-alias-border-l3);

@@ -23,6 +23,7 @@ import type { ModelsOperations } from './operations.ts'
 import type { DeepSeekModelDraft } from './DeepSeekModelsEditor.tsx'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
+import { effectiveModalities, MODALITY_CHOICES, withModality } from './modality.ts'
 
 /**
  * One configured model row. Fields this card does not edit must survive an
@@ -422,6 +423,29 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                     onChange={(event) => { editCapacity(index, 'maxTokens', event.target.value) }}
                   />
                 </label>
+                <div
+                  className={styles['modelModalityGroup']}
+                  role="group"
+                  aria-label={`${t('modality')} ${String(index + 1)}`}
+                >
+                  <span className={styles['modelFieldLabel']}>{t('modality')}</span>
+                  {MODALITY_CHOICES.map(choice => (
+                    <label className={styles['modelModality']} key={choice}>
+                      <input
+                        type="checkbox"
+                        checked={effectiveModalities(model, 'pi-ai').includes(choice)}
+                        disabled={disabled}
+                        aria-label={`${t('modality')} ${t(choice === 'text' ? 'modalityText' : 'modalityImage')} ${String(index + 1)}`}
+                        onChange={(event) => {
+                          onChange(models.map((row, at) =>
+                            at === index ? withModality(row, 'pi-ai', choice, event.target.checked) : row))
+                        }}
+                      />
+                      <span>{t(choice === 'text' ? 'modalityText' : 'modalityImage')}</span>
+                    </label>
+                  ))}
+                  <span className={styles['modelModalityHint']}>{t('modalityHint')}</span>
+                </div>
               </div>
             )
             : null}

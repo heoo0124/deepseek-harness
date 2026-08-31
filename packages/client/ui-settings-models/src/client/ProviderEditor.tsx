@@ -213,7 +213,11 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
 
   // The model list is validated by the same per-row checker for both families,
   // so a bad row is named by its position rather than by a blanket message.
-  const modelFailure = validateDeepSeekModels(schema.getPath(draft, ['models']))
+  // The family reaches in because the modality field differs per family.
+  const modelFailure = validateDeepSeekModels(
+    schema.getPath(draft, ['models']),
+    layout === 'pi-ai' ? 'pi-ai' : 'deepseek',
+  )
   const keyFailure = apiKeyFailure(keyDraft)
   // What a probe or a write must carry: the typed key with paste whitespace
   // removed. A blank field yields an empty string, which both call sites read
@@ -257,7 +261,10 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       // with a bad row; it stays because the schema check below would refuse
       // the write with a message naming a path instead of the row, and because
       // nothing but this function decides what is written.
-      const failure = validateDeepSeekModels(schema.getPath(next, ['models']))
+      const failure = validateDeepSeekModels(
+        schema.getPath(next, ['models']),
+        layout === 'pi-ai' ? 'pi-ai' : 'deepseek',
+      )
       /* v8 ignore next 3 -- unreachable from the card: the same failure disables submit */
       if (failure !== undefined) {
         return `${t('model')} ${String(failure.index + 1)}: ${t(failure.key)}`
@@ -455,6 +462,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
               ? (
                 <DeepSeekModelsEditor
                   {...catalogProps}
+                  family={family}
                   defaultContextWindow={typeof defaultContextWindow === 'number'
                     ? defaultContextWindow
                     : undefined}

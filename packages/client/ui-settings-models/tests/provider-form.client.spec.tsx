@@ -552,6 +552,26 @@ describe('endpoint interrogation', () => {
     ])
   })
 
+  it('adopts a candidate that discloses both capacities', async () => {
+    // Adoption keeps whatever the provider disclosed, so this pins the two
+    // optional-capacity branches of the row it builds.
+    const discover = vi.fn(() => Promise.resolve(ok([
+      { id: 'full', contextWindow: 200_000, maxTokens: 8192 }, { id: 'bare' },
+    ])))
+    const { mutate } = await mountSection({ discover })
+    openEditor('openai')
+
+    fireEvent.click(screen.getByText(en.fetchModels))
+    await screen.findByText(en.fetchTitle)
+    fireEvent.click(screen.getByText(en.fetchAdopt))
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate).ops[0]?.value).toEqual([
+      { id: 'full', contextWindow: 200_000, maxTokens: 8192 },
+      { id: 'bare' },
+    ])
+  })
+
   it('keeps the rows editable when the provider cannot be interrogated', async () => {
     const discover = vi.fn(() => Promise.resolve(
       fail('https://proxy.example/v1/models answered 401; check the API key', 'llm/model-discovery-rejected'),

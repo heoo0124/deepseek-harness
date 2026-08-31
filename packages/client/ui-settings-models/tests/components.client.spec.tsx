@@ -17,6 +17,8 @@ import {
   DeepSeekModelsEditor, formatCapacity, modelDrafts, parseCapacity, validateDeepSeekModels,
 } from '../src/client/DeepSeekModelsEditor.tsx'
 import { apiKeyFailure } from '../src/client/apiKey.ts'
+import { effectiveModalities, invalidModality, withModality } from '../src/client/modality.ts'
+import { ModelListEditor } from '../src/client/ModelListEditor.tsx'
 import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import { deriveKeyRef, ModelsSettingsStore } from '../src/client/store.ts'
 import { createModelsOperations } from '../src/client/operations.ts'
@@ -644,6 +646,39 @@ describe('ModelsSection', () => {
     expect(validateDeepSeekModels([{ id: 'model', maxTokens: 0 }]))
       .toEqual({ index: 0, key: 'modelMaxTokensInvalid' })
     expect(validateDeepSeekModels([{ id: 'model', maxTokens: 8192 }])).toBeUndefined()
+    // The modality field is the caller's: `inputModalities` for deepseek,
+    // `input` for pi-ai. A row the page wrote cannot fail these, so the cases
+    // are values a hand-edited settings.yaml would carry.
+    expect(validateDeepSeekModels([{ id: 'model', inputModalities: ['audio'] }]))
+      .toEqual({ index: 0, key: 'modalityInvalid' })
+    expect(validateDeepSeekModels([{ id: 'model', inputModalities: [] }]))
+      .toEqual({ index: 0, key: 'modalityInvalid' })
+    expect(validateDeepSeekModels([{ id: 'model', inputModalities: ['text', 'text'] }]))
+      .toEqual({ index: 0, key: 'modalityInvalid' })
+    expect(validateDeepSeekModels([{ id: 'model', inputModalities: 'text' }]))
+      .toEqual({ index: 0, key: 'modalityInvalid' })
+    expect(validateDeepSeekModels([{ id: 'model', inputModalities: ['text', 'image'] }]))
+      .toBeUndefined()
+    // The pi-ai field is the one read when the family says so, and the
+    // deepseek field is not consulted at all.
+    expect(validateDeepSeekModels([{ id: 'model', input: ['audio'] }], 'pi-ai'))
+      .toEqual({ index: 0, key: 'modalityInvalid' })
+    expect(validateDeepSeekModels([{ id: 'model', inputModalities: ['audio'] }], 'pi-ai'))
+      .toBeUndefined()
+    expect(validateDeepSeekModels([{ id: 'model', input: ['text', 'image'] }], 'pi-ai'))
+      .toBeUndefined()
+  })
+
+  it('spells a non-list modality declaration so the diagnostic names it', () => {
+    // The row came from a hand-edited settings.yaml, so the value can be any
+    // JSON type; an object must not collapse to `[object Object]`.
+    expect(invalidModality({ input: { image: true } }, 'pi-ai')).toBe('{"image":true}')
+    expect(invalidModality({ input: 'image' }, 'pi-ai')).toBe('"image"')
+    expect(invalidModality({ input: 7 }, 'pi-ai')).toBe('7')
+    expect(invalidModality({ input: null }, 'pi-ai')).toBe('null')
+    expect(invalidModality({ input: ['audio'] }, 'pi-ai')).toBe('audio')
+    expect(invalidModality({}, 'pi-ai')).toBeUndefined()
+    expect(invalidModality({ input: ['text', 'image'] }, 'pi-ai')).toBeUndefined()
   })
 
   it('reads context windows written as counts, thousands, or millions', () => {
@@ -913,6 +948,7 @@ describe('ModelsSection', () => {
       overridden={false}
       defaultContextWindow={undefined}
       defaultMaxTokens={undefined}
+      family="deepseek"
       t={t}
       disabled={true}
       onChange={vi.fn()}
@@ -1517,5 +1553,144 @@ describe('apiKeyFailure', () => {
     // heuristic leaves them alone rather than guessing at a paste error.
     expect(apiKeyFailure('"')).toBeUndefined()
     expect(apiKeyFailure('"a')).toBeUndefined()
+  })
+})
+
+describe('model input modalities', () => {
+  /** The checkbox of one modality in one row, found by its aria-label. */
+  const box = (row: number, label: string): HTMLInputElement =>
+    screen.getByLabelText<HTMLInputElement>(`${en.modality} ${label} ${String(row)}`)
+
+  it('reads a row with no declaration as text-only, for both families', () => {
+    expect(effectiveModalities({}, 'deepseek')).toEqual(['text'])
+    expect(effectiveModalities({}, 'pi-ai')).toEqual(['text'])
+    // A declaration this page cannot read is not one it renders: the floor is
+    // what both adapters resolve an unreadable list to.
+    expect(effectiveModalities({ inputModalities: ['audio'] }, 'deepseek')).toEqual(['text'])
+    expect(effectiveModalities({ input: [] }, 'pi-ai')).toEqual(['text'])
+  })
+
+  it('writes each family its own field', () => {
+    expect(withModality({}, 'deepseek', 'image', true))
+      .toEqual({ inputModalities: ['text', 'image'] })
+    expect(withModality({}, 'pi-ai', 'image', true)).toEqual({ input: ['text', 'image'] })
+  })
+
+  it('keeps an explicit text-only declaration rather than falling back to inheritance', () => {
+    // The pi-ai half is the one this protects: an absent `input` means the
+    // installed catalog still answers, so dropping the field would widen the
+    // row back to whatever the catalog says the moment a user narrowed it.
+    const narrowed = withModality({ input: ['text', 'image'] }, 'pi-ai', 'image', false)
+    expect(narrowed).toEqual({ input: ['text'] })
+  })
+
+  it('restores text when the last modality is cleared', () => {
+    // Text is the floor every supported protocol carries; an empty list would
+    // describe a model that can receive nothing, and deepseek's schema refuses it.
+    expect(withModality({ inputModalities: ['text'] }, 'deepseek', 'text', false))
+      .toEqual({ inputModalities: ['text'] })
+    expect(withModality({ input: ['image'] }, 'pi-ai', 'image', false)).toEqual({ input: ['text'] })
+  })
+
+  it('keeps a declaration ordered text then image whatever the click order', () => {
+    const built = withModality(withModality({}, 'pi-ai', 'image', true), 'pi-ai', 'text', true)
+    expect(built).toEqual({ input: ['text', 'image'] })
+  })
+
+  it('preserves fields the row already carries', () => {
+    expect(withModality({ id: 'm', contextWindow: 1024 }, 'deepseek', 'image', true))
+      .toEqual({ id: 'm', contextWindow: 1024, inputModalities: ['text', 'image'] })
+  })
+
+  it('offers the two modalities and turns the image one on', () => {
+    const onChange = vi.fn()
+    render(<DeepSeekModelsEditor
+      models={[{ id: 'm' }]}
+      overridden={true}
+      defaultContextWindow={undefined}
+      defaultMaxTokens={undefined}
+      family="deepseek"
+      t={t}
+      disabled={false}
+      onChange={onChange}
+      onReset={vi.fn()}
+    />)
+    expandRow(1)
+    expect(box(1, en.modalityText).checked).toBe(true)
+    expect(box(1, en.modalityImage).checked).toBe(false)
+
+    fireEvent.click(box(1, en.modalityImage))
+    expect(onChange).toHaveBeenCalledWith([{ id: 'm', inputModalities: ['text', 'image'] }])
+  })
+
+  it('writes the pi-ai field from the pi-ai editor', () => {
+    const onChange = vi.fn()
+    render(<ModelListEditor
+      models={[{ id: 'm' }]}
+      onChange={onChange}
+      probe={{ settingsNs: 'llm-pi-ai' }}
+      operations={createModelsOperations(vi.fn() as never)}
+      t={t}
+      disabled={false}
+    />)
+    expandRow(1)
+    fireEvent.click(box(1, en.modalityImage))
+    expect(onChange).toHaveBeenCalledWith([{ id: 'm', input: ['text', 'image'] }])
+  })
+
+  it('edits only the row whose box was clicked', () => {
+    // The row rebuild maps over every row, so this pins the untouched half.
+    const onChange = vi.fn()
+    render(<ModelListEditor
+      models={[{ id: 'first', input: ['text'] }, { id: 'second' }]}
+      onChange={onChange}
+      probe={{ settingsNs: 'llm-pi-ai' }}
+      operations={createModelsOperations(vi.fn() as never)}
+      t={t}
+      disabled={false}
+    />)
+    expandRow(2)
+    fireEvent.click(box(2, en.modalityImage))
+    expect(onChange).toHaveBeenCalledWith([
+      { id: 'first', input: ['text'] },
+      { id: 'second', input: ['text', 'image'] },
+    ])
+  })
+
+  it('edits only the DeepSeek row whose box was clicked', () => {
+    const onChange = vi.fn()
+    render(<DeepSeekModelsEditor
+      models={[{ id: 'first', inputModalities: ['text'] }, { id: 'second' }]}
+      overridden={true}
+      defaultContextWindow={undefined}
+      defaultMaxTokens={undefined}
+      family="deepseek"
+      t={t}
+      disabled={false}
+      onChange={onChange}
+      onReset={vi.fn()}
+    />)
+    expandRow(2)
+    fireEvent.click(box(2, en.modalityImage))
+    expect(onChange).toHaveBeenCalledWith([
+      { id: 'first', inputModalities: ['text'] },
+      { id: 'second', inputModalities: ['text', 'image'] },
+    ])
+  })
+
+  it('shows a declared image model as already on', () => {
+    render(<DeepSeekModelsEditor
+      models={[{ id: 'm', inputModalities: ['text', 'image'] }]}
+      overridden={true}
+      defaultContextWindow={undefined}
+      defaultMaxTokens={undefined}
+      family="deepseek"
+      t={t}
+      disabled={false}
+      onChange={vi.fn()}
+      onReset={vi.fn()}
+    />)
+    expandRow(1)
+    expect(box(1, en.modalityImage).checked).toBe(true)
   })
 })
