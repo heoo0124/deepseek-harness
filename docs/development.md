@@ -31,6 +31,24 @@ node scripts/install-lefthook.mjs
 
 If the wrapper rejects existing Git configuration or reports a stale lock, follow its diagnostic and the linked Agent Note rather than editing worktree metadata speculatively. After moving a checkout, rerun the wrapper to regenerate the owned path.
 
+#### Build the gitignored outputs before running `dsh web`
+
+`pnpm install` restores dependencies only. Build outputs under `packages/**/lib/` and `apps/web/dist/` are gitignored, so a fresh clone — and any checkout whose `node_modules` was deleted — carries no generated artifacts until they are built. Build the whole face you intend to run, not only the package you changed:
+
+```sh
+pnpm run build:lib:client   # browser face: tsc -b tsconfig.client.json, then tsdown
+pnpm run build:web          # the shell that dsh web serves
+```
+
+A partially stale tree fails with messages that name the wrong cause. Missing or outdated outputs surface as:
+
+- `build:web` failing on `@deepseek-ai/dsh-experimental-webworker-runtime/worker` — `lib/worker.js` is a gitignored output the package's `exports` maps to.
+- `require("@deepseek-ai/dsh-client-store") missed the module table` — the platform seed table lives in `packages/client/web/lib/index.js`, and a stale copy omits seeds the current source declares.
+- `require(...) missed the module table` naming a package the source no longer imports — a stale `lib/client.js` still carrying an old external.
+- `web boot: N entries did not activate`, every entry pending on `locale`, `sessions`, `settingsScope`, or `remote.*` — foundational packages such as `client/connection`, `api/remotes`, and `cordis-client-runner` sit at older timestamps than the UI packages, so no base service registers.
+
+The last one reads like an application bug and is the one worth remembering: it means the generated artifacts disagree with each other, not that the plugin tree is misconfigured. `pnpm run build:lib:client` rebuilds the whole browser face in one pass and clears all four.
+
 Run typecheck once after a fresh clone:
 
 ```sh

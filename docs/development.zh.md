@@ -33,6 +33,24 @@ node scripts/install-lefthook.mjs
 
 如果包装脚本拒绝现有 Git 配置或报告陈旧锁，请遵循其诊断和所链接的 Agent Note，不要凭猜测编辑 worktree 元数据。移动检出目录后，请重新运行包装脚本以重新生成自有路径。
 
+#### 运行 `dsh web` 前先构建被忽略的产物
+
+`pnpm install` 只恢复依赖。`packages/**/lib/` 与 `apps/web/dist/` 下的构建产物被 gitignore，因此新克隆的仓库——以及任何删除过 `node_modules` 的检出——在构建之前没有任何生成产物。请构建你要运行的整个 face，而不只是你改动的那个包：
+
+```sh
+pnpm run build:lib:client   # browser face: tsc -b tsconfig.client.json, then tsdown
+pnpm run build:web          # the shell that dsh web serves
+```
+
+产物部分陈旧时，失败信息指向的原因往往是错的。缺失或过期的产物表现为：
+
+- `build:web` 在 `@deepseek-ai/dsh-experimental-webworker-runtime/worker` 上失败——`lib/worker.js` 是该包 `exports` 映射到的 gitignore 产物。
+- `require("@deepseek-ai/dsh-client-store") missed the module table`——平台种子表位于 `packages/client/web/lib/index.js`，陈旧副本会漏掉当前源码声明的种子。
+- `require(...) missed the module table`，且点名一个源码早已不导入的包——陈旧的 `lib/client.js` 仍带着旧外部依赖。
+- `web boot: N entries did not activate`，每个条目都 pending 在 `locale`、`sessions`、`settingsScope` 或 `remote.*` 上——`client/connection`、`api/remotes`、`cordis-client-runner` 等基础包的时间戳早于 UI 包，于是没有任何基础服务完成注册。
+
+最后一条看起来像应用缺陷，也最值得记住：它说明生成产物彼此不一致，而不是插件树配置有误。`pnpm run build:lib:client` 会一次性重建整个浏览器 face 并同时消除上述四种情况。
+
 新克隆后请先运行一次类型检查：
 
 ```sh
