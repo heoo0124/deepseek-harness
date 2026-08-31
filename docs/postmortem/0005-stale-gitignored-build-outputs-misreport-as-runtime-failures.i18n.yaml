@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/postmortem/0005-stale-gitignored-build-outputs-misreport-as-runtime-failures.md
+0005-stale-gitignored-build-outputs-misreport-as-runtime-failures.md: f4d219db51fbabd7354d42f3b2f01743c1536af9
+0005-stale-gitignored-build-outputs-misreport-as-runtime-failures.zh.md: b96754c42c91fb6ce031f9b9920a965ea0c65149
